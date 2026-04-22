@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  ros2unity:
+    image: everskyrube/ros2-humble:latest
+    container_name: ros2unity
+    entrypoint: /bin/bash
+    network_mode: host
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1  
+              capabilities: [gpu]
+    devices:
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+      - /dev/nvidia0:/dev/nvidia0
+    group_add:
+      - video
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /etc/localtime:/etc/localtime:ro
+      - /dev/bus/usb:/dev/bus/usb
+      - /home/sky/ros2unity_ws:/ros2unity_ws
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+    runtime: nvidia 
+    privileged: true
+    working_dir: /ros2unity_ws
+    shm_size: 32G
+    stdin_open: true
+    tty: true 
