@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   ros2unity:
-    image: everskyrube/ros2-humble:latest
+    image: everskyrube/ros2-humble:ur_humble_driver
     container_name: ros2unity
     entrypoint: /bin/bash
     network_mode: host
