@@ -19,12 +19,14 @@ services:
       - /dev/nvidia-uvm:/dev/nvidia-uvm
       - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
       - /dev/nvidia0:/dev/nvidia0
+      - /dev/input:/dev/input
     group_add:
       - video
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - /etc/localtime:/etc/localtime:ro
       - /dev/bus/usb:/dev/bus/usb
+      - /dev/input:/dev/input
       - /home/sky/ros2unity_ws:/ros2unity_ws
     environment:
       - DISPLAY=${DISPLAY}

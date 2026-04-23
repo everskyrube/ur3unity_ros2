@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="ur3_with_gripper">
+
+  <xacro:arg name="ur_type"                  default="ur3"/>
+  <xacro:arg name="use_fake_hardware"        default="true"/>
+  <xacro:arg name="generate_ros2_control_tag" default="true"/>
+
+  <xacro:arg name="joint_limit_params" default="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"/>
+  <xacro:arg name="kinematics_params"  default="$(find ur_description)/config/$(arg ur_type)/default_kinematics.yaml"/>
+  <xacro:arg name="physical_params"    default="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"/>
+  <xacro:arg name="visual_params"      default="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"/>
+  <xacro:arg name="initial_positions_file" default="$(find ur3_with_gripper_description)/config/initial_positions.yaml"/>
+  <xacro:property name="initial_positions_file" value="$(arg initial_positions_file)"/>
+
+  <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+  <xacro:include filename="$(find robotiq_description)/urdf/ur_to_robotiq_adapter.urdf.xacro"/>
+  <xacro:include filename="$(find robotiq_description)/urdf/robotiq_2f_140_macro.urdf.xacro"/>
+
+  <link name="world"/>
+
+  <xacro:ur_robot
+    name="ur3_with_gripper"
+    tf_prefix=""
+    parent="world"
+    joint_limits_parameters_file="$(arg joint_limit_params)"
+    kinematics_parameters_file="$(arg kinematics_params)"
+    physical_parameters_file="$(arg physical_params)"
+    visual_parameters_file="$(arg visual_params)"
+    generate_ros2_control_tag="$(arg generate_ros2_control_tag)"
+    use_fake_hardware="$(arg use_fake_hardware)"
+    initial_positions="${xacro.load_yaml(initial_positions_file)}">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:ur_robot>
+
+  <xacro:ur_to_robotiq prefix="" parent="tool0" child="gripper_mount_link"/>
+
+  <xacro:robotiq_gripper
+    name="RobotiqGripper"
+    prefix=""
+    parent="gripper_mount_link"
+    include_ros2_control="false">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:robotiq_gripper>
+
+</robot>

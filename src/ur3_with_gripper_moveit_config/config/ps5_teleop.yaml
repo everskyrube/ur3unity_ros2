@@ -1,0 +1,35 @@
+ps5_to_servo_teleop:
+  ros__parameters:
+    # Scaling — passed to servo as [-1, 1], servo handles physical units
+    deadzone: 0.12
+    linear_scale: 0.9
+    angular_scale: 0.9
+    joint_scale: 0.9
+
+    # Frames
+    base_frame: base_link
+    ee_frame: tool0
+
+    # Gripper (finger_joint is revolute, 0 open → 0.695 closed on a 2F-140)
+    gripper_min: 0.0
+    gripper_max: 0.695
+    gripper_step: 0.02      # rad per joy message while open/close held
+    gripper_rate_hz: 50.0
+
+    # DualSense axis / button indices (Linux hid-playstation driver layout)
+    axis_left_x:   0
+    axis_left_y:   1
+    axis_l2:       4 #2
+    axis_right_x:  2 #3
+    axis_right_y:  3 #4
+    axis_r2:       5
+    axis_dpad_x:   6
+    axis_dpad_y:   7
+
+    btn_cross:     0   # X — open gripper
+    btn_circle:    1   # O — close gripper
+    btn_square:    2
+    btn_triangle:  3
+    btn_l1:        9   # Joint-mode modifier
+    btn_r1:        10   # Deadman (hold to move)
+

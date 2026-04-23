@@ -1,0 +1,9 @@
+# Folded "ready" pose for teleop — keeps the arm well clear of the shoulder /
+# wrist-alignment / fully-extended singularities. Elbow bent ~90 deg, wrist
+# offset so no two axes are colinear.
+shoulder_pan_joint:  0.0
+shoulder_lift_joint: -1.5708    # -pi/2   upper arm horizontal, forward
+elbow_joint:          1.5708    #  pi/2   forearm up
+wrist_1_joint:       -1.5708    # -pi/2   tool pointing forward
+wrist_2_joint:       -1.5708    # -pi/2   break wrist-axis alignment
+wrist_3_joint:        0.0
