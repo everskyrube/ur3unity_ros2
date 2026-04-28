@@ -1,1 +1,1 @@
-![Cover Photo](assets/cover_photo.png)
+![Cover Photo](assets/cover_photo_2.png)
