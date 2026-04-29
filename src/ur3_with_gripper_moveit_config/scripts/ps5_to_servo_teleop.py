@@ -8,6 +8,7 @@ Control layout (DualSense, hid-playstation kernel driver):
     Left stick X/Y     — planar XY in base_link
     Right stick X/Y    — roll / pitch
     L2 / R2 triggers   — Z down / Z up
+    Triangle / Square   — yaw + / yaw -
   Joint mode (L1 + R1):
     Left stick X/Y     — shoulder_pan / shoulder_lift
     Right stick X/Y    — wrist_1 / elbow
@@ -156,6 +157,10 @@ class Ps5ToServoTeleop(Node):
         l2 = self._trigger_01(self._axis(msg, int(self._p("axis_l2"))))
         r2 = self._trigger_01(self._axis(msg, int(self._p("axis_r2"))))
 
+        yaw_pos = self._btn(msg, int(self._p("btn_triangle")))
+        yaw_neg = self._btn(msg, int(self._p("btn_square")))
+        yaw = float(yaw_pos) - float(yaw_neg)
+
         twist = TwistStamped()
         twist.header.stamp = self.get_clock().now().to_msg()
         twist.header.frame_id = str(self._p("base_frame"))
@@ -164,7 +169,7 @@ class Ps5ToServoTeleop(Node):
         twist.twist.linear.z = lin * (r2 - l2)
         twist.twist.angular.x = ang * ry
         twist.twist.angular.y = ang * -rx
-        twist.twist.angular.z = 0.0
+        twist.twist.angular.z = ang * yaw
         self.twist_pub.publish(twist)
 
     def _publish_joint(self, msg: Joy):
