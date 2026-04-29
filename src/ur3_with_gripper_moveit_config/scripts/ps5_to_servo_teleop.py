@@ -7,7 +7,7 @@ Control layout (DualSense, hid-playstation kernel driver):
   Cartesian mode (default):
     Left stick X/Y     — planar XY in base_link
     Right stick X/Y    — roll / pitch
-    L2 / R2 triggers   — Z down / Z up
+    D-pad up / down     — Z up / Z down
     Triangle / Square   — yaw + / yaw -
   Joint mode (L1 + R1):
     Left stick X/Y     — shoulder_pan / shoulder_lift
@@ -59,6 +59,7 @@ class Ps5ToServoTeleop(Node):
         p("btn_square", 2);   p("btn_triangle", 3)
         p("btn_l1", 4);       p("btn_r1", 5)
         p("btn_l2", 6);       p("btn_r2", 7)
+        p("btn_dpad_up", 11); p("btn_dpad_down", 12)
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
@@ -154,8 +155,9 @@ class Ps5ToServoTeleop(Node):
         ly = self._deadzone(self._axis(msg, int(self._p("axis_left_y"))))
         rx = self._deadzone(self._axis(msg, int(self._p("axis_right_x"))))
         ry = self._deadzone(self._axis(msg, int(self._p("axis_right_y"))))
-        l2 = self._trigger_01(self._axis(msg, int(self._p("axis_l2"))))
-        r2 = self._trigger_01(self._axis(msg, int(self._p("axis_r2"))))
+        z_up = self._btn(msg, int(self._p("btn_dpad_up")))
+        z_down = self._btn(msg, int(self._p("btn_dpad_down")))
+        z = float(z_up) - float(z_down)
 
         yaw_pos = self._btn(msg, int(self._p("btn_triangle")))
         yaw_neg = self._btn(msg, int(self._p("btn_square")))
@@ -166,7 +168,7 @@ class Ps5ToServoTeleop(Node):
         twist.header.frame_id = str(self._p("base_frame"))
         twist.twist.linear.x = lin * ly
         twist.twist.linear.y = lin * -lx
-        twist.twist.linear.z = lin * (r2 - l2)
+        twist.twist.linear.z = lin * z
         twist.twist.angular.x = ang * ry
         twist.twist.angular.y = ang * -rx
         twist.twist.angular.z = ang * yaw
