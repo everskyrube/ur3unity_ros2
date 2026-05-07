@@ -1,30 +1,42 @@
 #!/usr/bin/env python3
-"""PS5 DualSense → moveit_servo teleop bridge.
+"""PS5 DualSense dual-mode teleop: Driving (UGV) + Manipulator (arm servo).
 
-Control layout (DualSense, hid-playstation kernel driver):
-  R1  (hold)           — deadman: arm only moves while held
-  L1  (hold + R1)      — joint-jog mode; release = Cartesian mode
-  Cartesian mode (default):
-    Left stick X/Y     — planar XY in base_link
-    Right stick X/Y    — roll / pitch
-    D-pad up / down     — Z up / Z down
-    Triangle / Square   — yaw + / yaw -
-  Joint mode (L1 + R1):
-    Left stick X/Y     — shoulder_pan / shoulder_lift
-    Right stick X/Y    — wrist_1 / elbow
-    D-pad X / Y        — wrist_2 / wrist_3
-  Gripper (no deadman needed):
-    X  (cross)         — open  (decrease finger_joint)
-    O  (circle)        — close (increase finger_joint)
+R1 toggles between DRIVING and MANIPULATOR mode (rising edge).
+
+DRIVING mode:
+  Left stick Y  -> linear.x (forward / backward)
+  Right stick X -> angular.z (turn left / right)
+
+MANIPULATOR mode:
+  L1 held -> joint-jog; released -> Cartesian
+  Cartesian:
+    Left stick X/Y  -> XY in base_link
+    Right stick X/Y -> roll / pitch
+    D-pad up/down   -> Z up/down
+    Triangle/Square -> yaw +/-
+  Joint:
+    Left stick X/Y  -> shoulder_pan / shoulder_lift
+    Right stick X/Y -> wrist_1 / elbow
+    D-pad X/Y      -> wrist_2 / wrist_3
+
+Gripper (any mode): Cross -> open, Circle -> close
+Mode published on /teleop/mode (std_msgs/String).
 """
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
+from enum import Enum
 
 from sensor_msgs.msg import Joy, JointState
-from geometry_msgs.msg import TwistStamped
+from geometry_msgs.msg import Twist, TwistStamped
 from control_msgs.msg import JointJog
+from std_msgs.msg import String
 from std_srvs.srv import Trigger
+
+
+class Mode(Enum):
+    DRIVING = 0
+    MANIPULATOR = 1
 
 
 ARM_JOINTS = [
@@ -37,61 +49,104 @@ ARM_JOINTS = [
 ]
 
 
-class Ps5ToServoTeleop(Node):
+class Ps5DualModeTeleop(Node):
     def __init__(self):
         super().__init__("ps5_to_servo_teleop")
 
         p = self.declare_parameter
         p("deadzone", 0.12)
+
+        # Arm scales
         p("linear_scale", 0.9)
         p("angular_scale", 0.9)
         p("joint_scale", 0.9)
         p("base_frame", "base_link")
         p("ee_frame", "tool0")
+
+        # Driving scales (Jackal UGV)
+        p("drive_linear_scale", 0.5)
+        p("drive_angular_scale", 1.0)
+
+        # Gripper
         p("gripper_min", 0.0)
         p("gripper_max", 0.695)
         p("gripper_step", 0.02)
         p("gripper_rate_hz", 50.0)
-        p("axis_left_x", 0);  p("axis_left_y", 1);  p("axis_l2", 2)
-        p("axis_right_x", 3); p("axis_right_y", 4); p("axis_r2", 5)
-        p("axis_dpad_x", 6);  p("axis_dpad_y", 7)
-        p("btn_cross", 0);    p("btn_circle", 1)
-        p("btn_square", 2);   p("btn_triangle", 3)
-        p("btn_l1", 4);       p("btn_r1", 5)
-        p("btn_l2", 6);       p("btn_r2", 7)
-        p("btn_dpad_up", 11); p("btn_dpad_down", 12)
+
+        # Axes
+        p("axis_left_x", 0)
+        p("axis_left_y", 1)
+        p("axis_l2", 2)
+        p("axis_right_x", 3)
+        p("axis_right_y", 4)
+        p("axis_r2", 5)
+        p("axis_dpad_x", 6)
+        p("axis_dpad_y", 7)
+
+        # Buttons
+        p("btn_cross", 0)
+        p("btn_circle", 1)
+        p("btn_square", 2)
+        p("btn_triangle", 3)
+        p("btn_l1", 4)
+        p("btn_r1", 5)
+        p("btn_l2", 6)
+        p("btn_r2", 7)
+        p("btn_dpad_up", 11)
+        p("btn_dpad_down", 12)
+
+        # Watchdog
+        p("watchdog_timeout", 0.3)
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=10,
         )
+
+        # Arm publishers
         self.twist_pub = self.create_publisher(
             TwistStamped, "/servo_node/delta_twist_cmds", qos)
         self.joint_pub = self.create_publisher(
             JointJog, "/servo_node/delta_joint_cmds", qos)
-        #self.gripper_state_pub = self.create_publisher(
-        #    JointState, "/joint_states", qos)
-
-        # CHANGED: Publish to /gripper/joint_states instead of /joint_states
         self.gripper_state_pub = self.create_publisher(
             JointState, "/gripper/joint_states", qos)
-            
+
+        # Driving publisher
+        self.cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel", qos)
+
+        # Mode publisher
+        self.mode_pub = self.create_publisher(String, "/teleop/mode", qos)
+
+        # Joy subscriber
         self.joy_sub = self.create_subscription(Joy, "/joy", self._on_joy, qos)
 
+        # Servo startup
         self._servo_start = self.create_client(Trigger, "/servo_node/start_servo")
         self._servo_started = False
         self.create_timer(1.0, self._try_start_servo)
 
+        # Gripper state
         self._gripper_pos = 0.0
         self._gripper_open_held = False
         self._gripper_close_held = False
         rate = float(self.get_parameter("gripper_rate_hz").value)
         self.create_timer(1.0 / max(rate, 1.0), self._tick_gripper)
 
+        # Mode toggle state
+        self._mode = Mode.DRIVING
+        self._prev_r1 = False
+
+        # Watchdog
+        self._last_joy_stamp = None
+        timeout = float(self.get_parameter("watchdog_timeout").value)
+        self.create_timer(timeout / 2.0, self._watchdog_tick)
+
+        self._publish_mode()
+
         self.get_logger().info(
-            "PS5 teleop ready. Hold R1 to move. Hold L1+R1 for joint mode. "
-            "Cross = open gripper, Circle = close gripper.")
+            "Dual-mode teleop ready. Press R1 to toggle DRIVING <-> MANIPULATOR. "
+            "Starting in DRIVING mode.")
 
     def _try_start_servo(self):
         if self._servo_started:
@@ -129,24 +184,71 @@ class Ps5ToServoTeleop(Node):
         sign = 1.0 if v > 0 else -1.0
         return (v - sign * dz) / (1.0 - dz)
 
-    def _trigger_01(self, raw: float) -> float:
-        # DualSense triggers rest at +1, become -1 fully pressed. Normalize to [0, 1].
-        return max(0.0, min(1.0, (1.0 - raw) * 0.5))
+    def _publish_mode(self):
+        msg = String()
+        msg.data = self._mode.name
+        self.mode_pub.publish(msg)
+
+    def _zero_driving(self):
+        self.cmd_vel_pub.publish(Twist())
+
+    def _zero_arm(self):
+        t = TwistStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = str(self._p("base_frame"))
+        self.twist_pub.publish(t)
+
+    def _watchdog_tick(self):
+        if self._last_joy_stamp is None:
+            return
+        timeout = float(self._p("watchdog_timeout"))
+        elapsed = (self.get_clock().now() - self._last_joy_stamp).nanoseconds / 1e9
+        if elapsed > timeout:
+            self._zero_driving()
+            self._zero_arm()
 
     def _on_joy(self, msg: Joy):
-        # Gripper buttons — latch level, released in tick if lifted
-        self._gripper_open_held  = self._btn(msg, int(self._p("btn_cross")))
+        self._last_joy_stamp = self.get_clock().now()
+
+        # Gripper buttons work in any mode
+        self._gripper_open_held = self._btn(msg, int(self._p("btn_cross")))
         self._gripper_close_held = self._btn(msg, int(self._p("btn_circle")))
 
-        # Deadman
-        if not self._btn(msg, int(self._p("btn_r1"))):
-            return
+        # R1 toggle (rising edge only)
+        r1 = self._btn(msg, int(self._p("btn_r1")))
+        if r1 and not self._prev_r1:
+            old_mode = self._mode
+            if self._mode == Mode.DRIVING:
+                self._zero_driving()
+                self._mode = Mode.MANIPULATOR
+            else:
+                self._zero_arm()
+                self._mode = Mode.DRIVING
+            self._publish_mode()
+            self.get_logger().info(f"Mode: {old_mode.name} -> {self._mode.name}")
+        self._prev_r1 = r1
 
-        joint_mode = self._btn(msg, int(self._p("btn_l1")))
-        if joint_mode:
-            self._publish_joint(msg)
+        # Dispatch
+        if self._mode == Mode.DRIVING:
+            self._publish_driving(msg)
         else:
-            self._publish_twist(msg)
+            joint_mode = self._btn(msg, int(self._p("btn_l1")))
+            if joint_mode:
+                self._publish_joint(msg)
+            else:
+                self._publish_twist(msg)
+
+    def _publish_driving(self, msg: Joy):
+        lin_scale = float(self._p("drive_linear_scale"))
+        ang_scale = float(self._p("drive_angular_scale"))
+
+        ly = self._deadzone(self._axis(msg, int(self._p("axis_left_y"))))
+        rx = self._deadzone(self._axis(msg, int(self._p("axis_right_x"))))
+
+        twist = Twist()
+        twist.linear.x = lin_scale * ly
+        twist.angular.z = ang_scale * rx
+        self.cmd_vel_pub.publish(twist)
 
     def _publish_twist(self, msg: Joy):
         lin = float(self._p("linear_scale"))
@@ -155,6 +257,7 @@ class Ps5ToServoTeleop(Node):
         ly = self._deadzone(self._axis(msg, int(self._p("axis_left_y"))))
         rx = self._deadzone(self._axis(msg, int(self._p("axis_right_x"))))
         ry = self._deadzone(self._axis(msg, int(self._p("axis_right_y"))))
+
         z_up = self._btn(msg, int(self._p("btn_dpad_up")))
         z_down = self._btn(msg, int(self._p("btn_dpad_down")))
         z = float(z_up) - float(z_down)
@@ -204,8 +307,6 @@ class Ps5ToServoTeleop(Node):
             self._gripper_pos = max(lo, self._gripper_pos - step)
         elif self._gripper_close_held and not self._gripper_open_held:
             self._gripper_pos = min(hi, self._gripper_pos + step)
-        # Always publish current position so robot_state_publisher has TFs for the
-        # mimic-driven gripper chain even while no button is pressed.
         js = JointState()
         js.header.stamp = self.get_clock().now().to_msg()
         js.name = ["finger_joint"]
@@ -215,7 +316,7 @@ class Ps5ToServoTeleop(Node):
 
 def main():
     rclpy.init()
-    node = Ps5ToServoTeleop()
+    node = Ps5DualModeTeleop()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

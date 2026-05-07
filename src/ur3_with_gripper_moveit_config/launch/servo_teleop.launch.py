@@ -197,6 +197,15 @@ def generate_launch_description():
         condition=__import__("launch.conditions", fromlist=["IfCondition"]).IfCondition(launch_rviz),
     )
 
+    # --- mode_widget ---
+    mode_widget_node = Node(
+        package='ur3_with_gripper_moveit_config',
+        executable='mode_widget.py',
+        name='mode_widget',
+        output='screen'
+    )
+
+
     return LaunchDescription([
         ur_type_arg,
         launch_rviz_arg,
@@ -205,9 +214,10 @@ def generate_launch_description():
         ros2_control_node,
         joint_state_broadcaster_spawner,
         delay_forward_ctrl,
-        joint_state_publisher_node,  # <-- ADD THIS LINE
+        joint_state_publisher_node,
         servo_node,
         joy_node,
         ps5_teleop,
         rviz_node,
+        mode_widget_node, 
     ])

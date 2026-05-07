@@ -9,7 +9,9 @@ install(
 )
 
 install(
-  PROGRAMS scripts/ps5_to_servo_teleop.py
+  PROGRAMS
+    scripts/ps5_to_servo_teleop.py
+    scripts/mode_widget.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
